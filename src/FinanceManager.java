@@ -4,7 +4,7 @@ import com.google.gson.reflect.TypeToken;
 
 class FinanceManager {
     private Map<String, List<Transaction>> userFinances = new HashMap<>();
-    private Map<String, Double> categoryBudgets = new HashMap<>();
+    private Map<String, Map<String, Double>> userBudgets = new HashMap<>();
     private static final String FINANCES_FILE = "finances.json";
     private static final List<String> INCOME_CATEGORIES = Arrays.asList(
             "Зарплата", "Инвестиции", "Переводы от других людей", "Прочее"
@@ -51,8 +51,7 @@ class FinanceManager {
                     saveFinances();
                     break;
                 case "5":
-                    manageBudgets(scanner);
-                    saveFinances();
+                    manageBudgets(scanner, user);
                     break;
                 case "6":
                     System.out.println("Выход в главное меню.");
@@ -78,7 +77,7 @@ class FinanceManager {
                 .sum();
 
         double balance = totalIncome - totalExpense;
-        System.out.printf("\nВаш текущий баланс: %.2f%n", balance);
+        System.out.printf("Ваш текущий баланс: %.2f%n", balance);
 
         if (finances.isEmpty()) {
             System.out.println("Нет записей о финансах.");
@@ -87,6 +86,7 @@ class FinanceManager {
 
         Map<String, Double> incomeSummary = new LinkedHashMap<>();
         Map<String, Double> expenseSummary = new LinkedHashMap<>();
+        Map<String, Double> budgets = userBudgets.getOrDefault(user.getUsername(), new HashMap<>());
 
         for (Transaction transaction : finances) {
             if (transaction.getType().equals("income")) {
@@ -110,12 +110,43 @@ class FinanceManager {
             System.out.println("  Нет расходов.");
         } else {
             expenseSummary.forEach((category, total) -> {
-                double budget = categoryBudgets.getOrDefault(category, 0.0);
+                double budget = budgets.getOrDefault(category, 0.0);
                 double remaining = budget - total;
                 String status = remaining >= 0 ? "Остаток" : "Превышение";
                 System.out.printf("  %s: %.2f (Бюджет: %.2f, %s: %.2f)%n",
                         category, total, budget, status, Math.abs(remaining));
             });
+        }
+    }
+
+    public void manageBudgets(Scanner scanner, User user) {
+        boolean isManagingBudgets = true;
+
+        Map<String, Double> budgets = userBudgets.computeIfAbsent(user.getUsername(), k -> new HashMap<>());
+
+        while (isManagingBudgets) {
+            System.out.println("\nКатегории расходов и их бюджеты:");
+            for (int i = 0; i < EXPENSE_CATEGORIES.size(); i++) {
+                String category = EXPENSE_CATEGORIES.get(i);
+                double budget = budgets.getOrDefault(category, 0.0);
+                System.out.printf("%d. %s (Бюджет: %.2f)%n", i + 1, category, budget);
+            }
+            System.out.println("0. Назад в главное меню");
+            System.out.print("Выберите категорию для изменения бюджета: ");
+
+            int choice = Integer.parseInt(scanner.nextLine());
+            if (choice == 0) {
+                isManagingBudgets = false;
+            } else if (choice > 0 && choice <= EXPENSE_CATEGORIES.size()) {
+                String selectedCategory = EXPENSE_CATEGORIES.get(choice - 1);
+                System.out.printf("Введите новый бюджет для категории \"%s\": ", selectedCategory);
+                double newBudget = Double.parseDouble(scanner.nextLine());
+                budgets.put(selectedCategory, newBudget);
+                saveFinances();
+                System.out.printf("Бюджет для категории \"%s\" обновлен: %.2f%n", selectedCategory, newBudget);
+            } else {
+                System.out.println("Ошибка: некорректный выбор. Попробуйте снова.");
+            }
         }
     }
 
@@ -196,23 +227,27 @@ class FinanceManager {
         Transaction recipientTransaction = new Transaction("income", "Переводы от других людей", amount);
         userFinances.computeIfAbsent(recipientUsername, k -> new ArrayList<>()).add(recipientTransaction);
 
-        System.out.printf("Успешный перевод %.2f от %s к %s.%n",
-                amount, sender.getUsername(), recipient.getUsername());
+        System.out.printf("Успешный перевод %.2f от %s к %s.%n", amount, sender.getUsername(), recipientUsername);
     }
 
-    public void manageBudgets(Scanner scanner) {
-        // Существующая логика управления бюджетами
-    }
 
     private void loadFinances() {
-        Type financeType = new TypeToken<Map<String, List<Transaction>>>() {}.getType();
-        Map<String, List<Transaction>> loadedFinances = FileManager.loadFromFile(FINANCES_FILE, financeType);
-        if (loadedFinances != null) {
-            userFinances = loadedFinances;
+        Type financeType = new TypeToken<Map<String, Object>>() {}.getType();
+        Map<String, Object> loadedData = FileManager.loadFromFile(FINANCES_FILE, financeType);
+        if (loadedData != null) {
+            Type transactionListType = new TypeToken<Map<String, List<Transaction>>>() {}.getType();
+            userFinances = (Map<String, List<Transaction>>) loadedData.getOrDefault("transactions", new HashMap<>());
+
+            Type userBudgetType = new TypeToken<Map<String, Map<String, Double>>>() {}.getType();
+            userBudgets = (Map<String, Map<String, Double>>) loadedData.getOrDefault("budgets", new HashMap<>());
         }
     }
 
     private void saveFinances() {
-        FileManager.saveToFile(FINANCES_FILE, userFinances);
+        Map<String, Object> dataToSave = new HashMap<>();
+        dataToSave.put("transactions", userFinances);
+        dataToSave.put("budgets", userBudgets);
+
+        FileManager.saveToFile(FINANCES_FILE, dataToSave);
     }
 }

@@ -28,7 +28,7 @@ class AuthManager {
     public boolean login(String username, String password) {
         User user = users.get(username);
         if (user != null && user.getPasswordHash().equals(hashPassword(password))) {
-            currentUser = user; // Устанавливаем текущего пользователя
+            currentUser = user;
             return true;
         }
         return false;
